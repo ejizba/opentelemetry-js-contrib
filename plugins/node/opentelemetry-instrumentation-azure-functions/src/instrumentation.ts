@@ -15,6 +15,7 @@
  */
 
 import { context as otelContext, propagation } from '@opentelemetry/api';
+import { SeverityNumber } from '@opentelemetry/api-logs';
 import {
   InstrumentationBase,
   InstrumentationNodeModuleDefinition,
@@ -35,8 +36,11 @@ export class AzureFunctionsInstrumentation extends InstrumentationBase {
       '@azure/functions',
       ['^4.0.0'],
       (moduleExports: typeof azFunc) => {
-        disposable = moduleExports.app.hook.preInvocation(context =>
-          this._preInvocationHook(context)
+        disposable = moduleExports.Disposable.from(
+          moduleExports.app.hook.preInvocation(context =>
+            this._preInvocationHook(context)
+          ),
+          moduleExports.app.hook.log(context => this._logHook(context))
         );
         return moduleExports;
       },
@@ -55,5 +59,32 @@ export class AzureFunctionsInstrumentation extends InstrumentationBase {
         context.functionHandler
       );
     }
+  }
+
+  private _logHook(context: LogHookContext) {
+    this.logger.emit({
+      body: context.message,
+      severityNumber: toOtelSeverityNumber(context.level),
+      severityText: context.level,
+    });
+  }
+}
+
+function toOtelSeverityNumber(level: azFunc.LogLevel): SeverityNumber {
+  switch (level) {
+    case 'information':
+      return SeverityNumber.INFO;
+    case 'debug':
+      return SeverityNumber.DEBUG;
+    case 'error':
+      return SeverityNumber.ERROR;
+    case 'trace':
+      return SeverityNumber.TRACE;
+    case 'warning':
+      return SeverityNumber.WARN;
+    case 'critical':
+      return SeverityNumber.FATAL;
+    default:
+      return SeverityNumber.UNSPECIFIED;
   }
 }
